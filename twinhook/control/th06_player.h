@@ -1,11 +1,10 @@
 #pragma once
-#pragma once
 #include "th_player.h"
 
 class th06_player : public th_player
 {
 public:
-	th06_player() : th_player(gs_addr{ (uint8_t*)0x477834,(uint8_t*)0x474E5C }) {}
+	th06_player() : th_player(gs_addr{ (uint8_t*)0x006CAA68, (uint8_t*)0x0069D904 }) {}
 	~th06_player() = default;
 
 	void onInit() override;
@@ -18,5 +17,10 @@ public:
 	void onEnableChanged(bool enable) override;
 
 private:
+	void doBulletPoll();
+	void doEnemyPoll();
+	void doPowerupPoll();
+	void doLaserPoll();
+
 	player getPlayerEntity() override;
 };
