@@ -12,6 +12,30 @@
 #include "gfx/di8_input_overlay.h"
 #include "gfx/imgui_window.h"
 
+namespace
+{
+	void setAsyncKey(BYTE diKeys[256], BYTE dik, int vk)
+	{
+		if (GetAsyncKeyState(vk) & 0x8000)
+			diKeys[dik] = DIK_KEY_DOWN;
+	}
+
+	void pollAsyncKeys(BYTE diKeys[256])
+	{
+		memset(diKeys, 0, 256);
+		setAsyncKey(diKeys, DIK_LEFT, VK_LEFT);
+		setAsyncKey(diKeys, DIK_RIGHT, VK_RIGHT);
+		setAsyncKey(diKeys, DIK_UP, VK_UP);
+		setAsyncKey(diKeys, DIK_DOWN, VK_DOWN);
+		setAsyncKey(diKeys, DIK_Z, 'Z');
+		setAsyncKey(diKeys, DIK_X, 'X');
+		setAsyncKey(diKeys, DIK_G, 'G');
+		setAsyncKey(diKeys, DIK_H, 'H');
+		setAsyncKey(diKeys, DIK_LSHIFT, VK_SHIFT);
+		setAsyncKey(diKeys, DIK_LCONTROL, VK_CONTROL);
+	}
+}
+
 void th_player::onInit()
 {
 	CHECK(imgui_window_init());
@@ -25,13 +49,24 @@ void th_player::onBeginTick()
 void th_player::onTick()
 {
 	th_di8_hook* di8 = th_di8_hook::inst();
-	if (!di8->DirectInput8)
-		return;
-
-	BYTE diKeys[256];
-	if (di8->DirectInput8->DirectInputDevice8->DirectInputDevice8->GetDeviceState(256, diKeys) == DI_OK)
+	BYTE diKeys[256] = {};
+	bool haveInput = false;
+	if (di8->DirectInput8 &&
+		di8->DirectInput8->DirectInputDevice8 &&
+		di8->DirectInput8->DirectInputDevice8->DirectInputDevice8 &&
+		di8->DirectInput8->DirectInputDevice8->DirectInputDevice8->GetDeviceState(256, diKeys) == DI_OK)
 	{
-		BYTE press[256];
+		haveInput = true;
+	}
+	else
+	{
+		pollAsyncKeys(diKeys);
+		haveInput = true;
+	}
+
+	if (haveInput)
+	{
+		BYTE press[256] = {};
 		kpd.tick(diKeys, press);
 		this->handleInput(diKeys, press);
 	}
@@ -82,7 +117,8 @@ void th_player::handleInput(const BYTE diKeys[256], const BYTE press[256])
 	if (press[DIK_H])
 		render = !render;
 
-	algorithm->handleInput(diKeys, press);
+	if (algorithm)
+		algorithm->handleInput(diKeys, press);
 }
 
 void th_player::onEnableChanged(bool enable)
