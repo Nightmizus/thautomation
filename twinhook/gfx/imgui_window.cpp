@@ -166,6 +166,15 @@ bool imgui_window_preframe()
 		(PtInRect(&client, pos) || GetCapture() == hwnd))
 	{
 		io.MousePos = ImVec2((float)pos.x, (float)pos.y);
+		io.MouseDown[0] = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+		io.MouseDown[1] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+		io.MouseDown[2] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+	}
+	else
+	{
+		io.MouseDown[0] = false;
+		io.MouseDown[1] = false;
+		io.MouseDown[2] = false;
 	}
 	ImGui::NewFrame();
 	frame_active = true;
