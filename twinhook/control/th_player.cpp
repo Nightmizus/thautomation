@@ -71,6 +71,11 @@ void th_player::onTick()
 		this->handleInput(diKeys, press);
 	}
 
+	if (imgui_window_consume_toggle_bot())
+		setEnable(!enabled);
+	if (imgui_window_consume_toggle_debug())
+		render = !render;
+
 	if (algorithm)
 		algorithm->onTick();
 }
@@ -90,26 +95,7 @@ void th_player::draw(IDirect3DDevice9* d3dDev)
 	if (algorithm)
 		algorithm->visualize(d3dDev);
 	DI8_Overlay_RenderInput(d3dDev, this->getKeyboardState());
-
-	/* IMGUI Integration*/
-	if (!imgui_window_frame_active())
-		return;
-
-	using namespace ImGui;
-	Begin("twinject (netdex)");
-	Text("b e p l #: %d %d %d %d", bullets.size(), enemies.size(), powerups.size(), lasers.size());
-	Text("bot state: %s", enabled ? "ENABLED" : "DISABLED");
-	Text("viz state: %s", render ? "DETAILED" : "NONE");
-
-	if (Button("Toggle Bot"))
-		setEnable(!enabled);
-	SameLine();
-	if (Button("Toggle Debug"))
-		render = !render;
-	Checkbox("Show IMGUI demo", &imguiShowDemoWindow);
-	End();
-
-	if (imguiShowDemoWindow)	ShowDemoWindow();
+	imgui_window_update_state((int)bullets.size(), (int)enemies.size(), (int)powerups.size(), (int)lasers.size(), enabled, render);
 }
 
 void th_player::handleInput(const BYTE diKeys[256], const BYTE press[256])

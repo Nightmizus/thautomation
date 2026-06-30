@@ -14,6 +14,9 @@
 #include <dinput.h>
 #include <tchar.h>
 
+#include <atomic>
+#include <thread>
+
 #include <spdlog/spdlog.h>
 
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -26,10 +29,22 @@ static HWND hwnd;
 static LPDIRECT3D9 pD3D;
 static MSG msg;
 static bool frame_active = false;
+static std::thread ui_thread;
+static std::atomic_bool ui_stop{ false };
+static std::atomic_bool ui_started{ false };
 
 static bool show_demo_window = true;
 static bool show_another_window = false;
 static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+static std::atomic_int stat_bullets{ 0 };
+static std::atomic_int stat_enemies{ 0 };
+static std::atomic_int stat_powerups{ 0 };
+static std::atomic_int stat_lasers{ 0 };
+static std::atomic_bool stat_bot_enabled{ false };
+static std::atomic_bool stat_render_enabled{ false };
+static std::atomic_bool request_toggle_bot{ false };
+static std::atomic_bool request_toggle_debug{ false };
 
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -64,7 +79,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-bool imgui_window_init()
+static bool imgui_window_create()
 {
 	SPDLOG_INFO("Initializing IMGUI external window and renderer");
 	// Create application window
@@ -120,7 +135,35 @@ bool imgui_window_init()
 	return true;
 }
 
-bool imgui_window_preframe()
+static void imgui_window_destroy()
+{
+	if (ImGui::GetCurrentContext())
+	{
+		ImGui_ImplDX9_Shutdown();
+		ImGui_ImplWin32_Shutdown();
+		ImGui::DestroyContext();
+	}
+
+	if (g_pd3dDevice)
+	{
+		g_pd3dDevice->Release();
+		g_pd3dDevice = NULL;
+	}
+	if (pD3D)
+	{
+		pD3D->Release();
+		pD3D = NULL;
+	}
+	if (hwnd)
+	{
+		DestroyWindow(hwnd);
+		hwnd = NULL;
+	}
+	if (wc.hInstance)
+		UnregisterClass(_T("Twinject Debugger"), wc.hInstance);
+}
+
+static bool imgui_window_begin_frame()
 {
 	frame_active = false;
 	if (msg.message == WM_QUIT)
@@ -181,12 +224,31 @@ bool imgui_window_preframe()
 	return true;
 }
 
-bool imgui_window_frame_active()
+static void imgui_window_build_ui()
 {
-	return frame_active;
+	using namespace ImGui;
+	Begin("twinject (netdex)");
+	Text("b e p l #: %d %d %d %d",
+		stat_bullets.load(),
+		stat_enemies.load(),
+		stat_powerups.load(),
+		stat_lasers.load());
+	Text("bot state: %s", stat_bot_enabled.load() ? "ENABLED" : "DISABLED");
+	Text("viz state: %s", stat_render_enabled.load() ? "DETAILED" : "NONE");
+
+	if (Button("Toggle Bot"))
+		request_toggle_bot.store(true);
+	SameLine();
+	if (Button("Toggle Debug"))
+		request_toggle_debug.store(true);
+	Checkbox("Show IMGUI demo", &show_demo_window);
+	End();
+
+	if (show_demo_window)
+		ShowDemoWindow();
 }
 
-bool imgui_window_render()
+static bool imgui_window_present()
 {
 	if (!frame_active || !g_pd3dDevice)
 		return false;
@@ -217,15 +279,79 @@ bool imgui_window_render()
 	return true;
 }
 
+static void imgui_window_loop()
+{
+	if (!imgui_window_create())
+	{
+		ui_started.store(false);
+		return;
+	}
+	ui_started.store(true);
+
+	while (!ui_stop.load())
+	{
+		if (imgui_window_begin_frame())
+		{
+			imgui_window_build_ui();
+			imgui_window_present();
+		}
+		Sleep(16);
+	}
+
+	imgui_window_destroy();
+}
+
+bool imgui_window_init()
+{
+	if (ui_started.load())
+		return true;
+
+	ui_stop.store(false);
+	ui_thread = std::thread(imgui_window_loop);
+	return ui_thread.joinable();
+}
+
+bool imgui_window_preframe()
+{
+	return true;
+}
+
+bool imgui_window_frame_active()
+{
+	return false;
+}
+
+void imgui_window_update_state(int bullets, int enemies, int powerups, int lasers, bool botEnabled, bool renderEnabled)
+{
+	stat_bullets.store(bullets);
+	stat_enemies.store(enemies);
+	stat_powerups.store(powerups);
+	stat_lasers.store(lasers);
+	stat_bot_enabled.store(botEnabled);
+	stat_render_enabled.store(renderEnabled);
+}
+
+bool imgui_window_consume_toggle_bot()
+{
+	return request_toggle_bot.exchange(false);
+}
+
+bool imgui_window_consume_toggle_debug()
+{
+	return request_toggle_debug.exchange(false);
+}
+
+bool imgui_window_render()
+{
+	return true;
+}
+
 bool imgui_window_cleanup()
 {
-	ImGui_ImplDX9_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
-
-	//if (g_pd3dDevice) g_pd3dDevice->Release();
-	if (pD3D) pD3D->Release();
-	DestroyWindow(hwnd);
-	UnregisterClass(_T("Twinject Debugger"), wc.hInstance);
+	ui_stop.store(true);
+	if (hwnd)
+		PostMessage(hwnd, WM_CLOSE, 0, 0);
+	if (ui_thread.joinable())
+		ui_thread.join();
 	return true;
 }

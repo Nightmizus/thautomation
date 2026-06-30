@@ -15,6 +15,12 @@ bool imgui_window_preframe();
 
 bool imgui_window_frame_active();
 
+void imgui_window_update_state(int bullets, int enemies, int powerups, int lasers, bool botEnabled, bool renderEnabled);
+
+bool imgui_window_consume_toggle_bot();
+
+bool imgui_window_consume_toggle_debug();
+
 /**
  * \brief Process the message queue and render buffer to screen
  * \return Whether the operation succeeded or not
