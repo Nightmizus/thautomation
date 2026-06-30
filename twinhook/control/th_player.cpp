@@ -92,6 +92,8 @@ void th_player::draw(IDirect3DDevice9* d3dDev)
 	DI8_Overlay_RenderInput(d3dDev, this->getKeyboardState());
 
 	/* IMGUI Integration*/
+	if (!imgui_window_frame_active())
+		return;
 
 	using namespace ImGui;
 	Begin("twinject (netdex)");

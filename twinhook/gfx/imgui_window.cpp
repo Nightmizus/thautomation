@@ -25,6 +25,7 @@ static WNDCLASSEX wc;
 static HWND hwnd;
 static LPDIRECT3D9 pD3D;
 static MSG msg;
+static bool frame_active = false;
 
 static bool show_demo_window = true;
 static bool show_another_window = false;
@@ -37,6 +38,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
+	case WM_MOUSEACTIVATE:
+		return MA_NOACTIVATE;
 	case WM_SIZE:
 		if (g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED)
 		{
@@ -44,9 +47,10 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			g_d3dpp.BackBufferWidth = LOWORD(lParam);
 			g_d3dpp.BackBufferHeight = HIWORD(lParam);
 			HRESULT hr = g_pd3dDevice->Reset(&g_d3dpp);
-			if (hr == D3DERR_INVALIDCALL)
-				IM_ASSERT(0);
-			ImGui_ImplDX9_CreateDeviceObjects();
+			if (SUCCEEDED(hr))
+				ImGui_ImplDX9_CreateDeviceObjects();
+			else
+				SPDLOG_WARN("IMGUI external window reset failed: {}", hr);
 		}
 		return 0;
 	case WM_SYSCOMMAND:
@@ -66,8 +70,13 @@ bool imgui_window_init()
 	// Create application window
 	wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("Twinject Debugger"), NULL };
 	RegisterClassEx(&wc);
-	hwnd = CreateWindow(_T("Twinject Debugger"), _T("Twinject Debugging Window"), 
+	hwnd = CreateWindowEx(WS_EX_NOACTIVATE, _T("Twinject Debugger"), _T("Twinject Debugging Window"),
 		WS_OVERLAPPEDWINDOW, 100, 100, 400, 800, NULL, NULL, wc.hInstance, NULL);
+	if (!hwnd)
+	{
+		UnregisterClass(_T("Twinject Debugger"), wc.hInstance);
+		return false;
+	}
 
 	// Initialize Direct3D
 	if ((pD3D = Direct3DCreate9(D3D_SDK_VERSION)) == NULL)
@@ -105,15 +114,34 @@ bool imgui_window_init()
 	//ImGui::StyleColorsClassic();
 
 	ZeroMemory(&msg, sizeof(msg));
-	ShowWindow(hwnd, SW_SHOWDEFAULT);
+	ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 	UpdateWindow(hwnd);
 	return true;
 }
 
 bool imgui_window_preframe()
 {
+	frame_active = false;
 	if (msg.message == WM_QUIT)
 		return false;
+	if (!hwnd || !IsWindow(hwnd) || !g_pd3dDevice)
+		return false;
+
+	RECT rect{};
+	if (!GetClientRect(hwnd, &rect) || rect.right <= rect.left || rect.bottom <= rect.top)
+		return false;
+
+	HRESULT coop = g_pd3dDevice->TestCooperativeLevel();
+	if (coop == D3DERR_DEVICELOST)
+		return false;
+	if (coop == D3DERR_DEVICENOTRESET)
+	{
+		ImGui_ImplDX9_InvalidateDeviceObjects();
+		if (FAILED(g_pd3dDevice->Reset(&g_d3dpp)))
+			return false;
+		ImGui_ImplDX9_CreateDeviceObjects();
+	}
+
 	// Poll and handle messages (inputs, window resize, etc.)
 	// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
 	// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
@@ -130,12 +158,30 @@ bool imgui_window_preframe()
 	// Start the Dear ImGui frame
 	ImGui_ImplDX9_NewFrame();
 	ImGui_ImplWin32_NewFrame();
+	ImGuiIO& io = ImGui::GetIO();
+	POINT pos{};
+	RECT client{};
+	if (GetCursorPos(&pos) && ScreenToClient(hwnd, &pos) && GetClientRect(hwnd, &client) &&
+		(PtInRect(&client, pos) || GetCapture() == hwnd))
+	{
+		io.MousePos = ImVec2((float)pos.x, (float)pos.y);
+	}
 	ImGui::NewFrame();
+	frame_active = true;
 	return true;
+}
+
+bool imgui_window_frame_active()
+{
+	return frame_active;
 }
 
 bool imgui_window_render()
 {
+	if (!frame_active || !g_pd3dDevice)
+		return false;
+	frame_active = false;
+
 	// Rendering
 	ImGui::EndFrame();
 	g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, false);
