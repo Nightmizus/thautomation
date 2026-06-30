@@ -156,24 +156,18 @@ void th_vo_algo::onTick()
 		}
 	}
 
-	// We should probably prioritize larger enemies over smaller ones, 
-	// and prioritize powerup gathering over enemies
+	// Target enemies by horizontally lining up the player shot with targets above.
 	for (const auto& enemy : player->enemies)
 	{
 		const vec2 enemyCom = enemy.obj->com();
 		const vec2 playerCom = plyr.obj->com();
 		if (enemyCom.y < playerCom.y) {
-			for (int dir : {control::Movement::Left, control::Movement::Right})
+			for (int dir = 0; dir < control::Movement::MaxValue; ++dir)
 			{
-				const vec2 pvel = this->getPlayerMovement(dir);
-
-				// Calculate x-distance to y-aligned axis of the enemy
-				float xDist = enemyCom.x - playerCom.x;
-				float colTick = xDist / pvel.x;
-				// Filter out impossible values
-				if (colTick >= 0 && colTick <= 6000)
+				float alignTick = ticksUntilEnemyAlignment(plyr, enemy, dir);
+				if (alignTick >= 0)
 				{
-					targetTicks[dir] = std::min(colTick, targetTicks[dir]);
+					targetTicks[dir] = std::min(alignTick, targetTicks[dir]);
 				}
 			}
 		}
@@ -305,6 +299,23 @@ void th_vo_algo::calibInit()
 vec2 th_vo_algo::getPlayerMovement(int dir)
 {
 	return control::kMovementVelocity[dir] * (control::kMovementFocused[dir] ? playerFocVel : playerVel);
+}
+
+float th_vo_algo::ticksUntilEnemyAlignment(const ::player& plyr, const enemy& target, int dir)
+{
+	const vec2 pvel = getPlayerMovement(dir);
+	const vec2 playerCom = plyr.obj->com();
+	const vec2 targetCom = target.obj->com();
+	const float dx = targetCom.x - playerCom.x;
+
+	if (std::abs(dx) <= ENEMY_TARGET_ALIGNMENT_TOLERANCE)
+		return 0.f;
+	if (std::abs(pvel.x) <= FLT_EPSILON)
+		return -1.f;
+	if ((dx > 0) != (pvel.x > 0))
+		return -1.f;
+
+	return std::abs(dx) / std::abs(pvel.x);
 }
 
 float th_vo_algo::minStaticCollideTick(

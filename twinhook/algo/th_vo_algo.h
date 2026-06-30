@@ -8,6 +8,7 @@ static const float MAX_FRAMES_TILL_COLLISION = 10.f;	// used for coloring vector
 /* Algorithmic Constants */
 static const float SQRT_2 = sqrt(2.f);
 static const float MIN_SAFETY_TICK = 10.0f;
+static const float ENEMY_TARGET_ALIGNMENT_TOLERANCE = 6.0f;
 
 
 /**
@@ -62,6 +63,9 @@ class th_vo_algo : public th_algorithm
 
 	// Get player's movement vector when moving in this direction
 	vec2 getPlayerMovement(int dir);
+
+	// Estimate frames until a movement direction horizontally lines up with an enemy.
+	float ticksUntilEnemyAlignment(const ::player& plyr, const enemy& target, int dir);
 
 	/**
 	* \brief Do one tick of calibration
