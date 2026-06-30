@@ -92,8 +92,11 @@ HMONITOR Direct3D9Wrapper::GetAdapterMonitor(UINT Adapter)
 
 HRESULT Direct3D9Wrapper::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface)
 {
-	IDirect3DDevice9* pDirect3DDevice9;
+	IDirect3DDevice9* pDirect3DDevice9 = nullptr;
 	HRESULT hRes = Direct3D9->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, &pDirect3DDevice9);
+	if (FAILED(hRes) || !pDirect3DDevice9)
+		return hRes;
+
 	Direct3DDevice9Wrapper *w = new Direct3DDevice9Wrapper(pDirect3DDevice9, this, pPresentationParameters);
 	*ppReturnedDeviceInterface = w;
 	th_d3d9_hook::inst()->d3ddev9_wrapper = w;
