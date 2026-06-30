@@ -15,6 +15,7 @@
 #include "control/th06_player.h"
 #include "control/th07_player.h"
 #include "control/th08_player.h"
+#include "control/th09_player.h"
 #include "control/th10_player.h"
 #include "control/th11_player.h"
 #include "control/th15_player.h"
@@ -68,6 +69,16 @@ void th08_init()
 	th08_bullet_proc_hook::bind(std::dynamic_pointer_cast<th08_player>(context->th_player).get());
 }
 
+void th09_init()
+{
+	context->th_player = std::make_shared<th09_player>();
+	context->th_algo = std::make_shared<th_vo_algo>(context->th_player.get());
+	context->th_player->bindAlgorithm(context->th_algo.get());
+
+	th_d3d9_hook::bind(context->th_player.get(), true);
+	th_di8_hook::bind(context->th_player.get());
+}
+
 void th10_init()
 {
 	context->th_player = std::make_shared<th10_player>();
@@ -106,6 +117,7 @@ static std::unordered_map<std::string, void(*)()> th_init{
 	{"th06", th06_init},
 	{"th07", th07_init},
 	{"th08", th08_init},
+	{"th09", th09_init},
 	{"th10", th10_init},
 	{"th11", th11_init},
 	{"th15", th15_init}

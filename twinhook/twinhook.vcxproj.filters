@@ -45,6 +45,9 @@
     <ClCompile Include="control\th08_player.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="control\th09_player.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="control\th10_player.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -174,6 +177,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="control\th08_player.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="control\th09_player.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="control\th10_player.h">
