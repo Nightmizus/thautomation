@@ -28,7 +28,6 @@ static WNDCLASSEX wc;
 static HWND hwnd;
 static LPDIRECT3D9 pD3D;
 static MSG msg;
-static bool frame_active = false;
 static std::thread ui_thread;
 static std::atomic_bool ui_stop{ false };
 static std::atomic_bool ui_started{ false };
@@ -165,7 +164,6 @@ static void imgui_window_destroy()
 
 static bool imgui_window_begin_frame()
 {
-	frame_active = false;
 	if (msg.message == WM_QUIT)
 		return false;
 	if (!hwnd || !IsWindow(hwnd) || !g_pd3dDevice)
@@ -220,7 +218,6 @@ static bool imgui_window_begin_frame()
 		io.MouseDown[2] = false;
 	}
 	ImGui::NewFrame();
-	frame_active = true;
 	return true;
 }
 
@@ -250,11 +247,11 @@ static void imgui_window_build_ui()
 
 static bool imgui_window_present()
 {
-	if (!frame_active || !g_pd3dDevice)
+	if (!g_pd3dDevice)
 		return false;
-	frame_active = false;
 
 	// Rendering
+	ImGui::Render();
 	g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, false);
 	g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, false);
 	g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, false);
@@ -262,7 +259,6 @@ static bool imgui_window_present()
 	g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
 	if (g_pd3dDevice->BeginScene() >= 0)
 	{
-		ImGui::Render();
 		ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 		g_pd3dDevice->EndScene();
 	}
@@ -289,7 +285,8 @@ static void imgui_window_loop()
 
 	while (!ui_stop.load())
 	{
-		if (imgui_window_begin_frame())
+		bool frameStarted = imgui_window_begin_frame();
+		if (frameStarted)
 		{
 			imgui_window_build_ui();
 			imgui_window_present();
