@@ -70,7 +70,7 @@ bool imgui_window_init()
 	// Create application window
 	wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("Twinject Debugger"), NULL };
 	RegisterClassEx(&wc);
-	hwnd = CreateWindowEx(WS_EX_NOACTIVATE, _T("Twinject Debugger"), _T("Twinject Debugging Window"),
+	hwnd = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_TOPMOST, _T("Twinject Debugger"), _T("Twinject Debugging Window"),
 		WS_OVERLAPPEDWINDOW, 100, 100, 400, 800, NULL, NULL, wc.hInstance, NULL);
 	if (!hwnd)
 	{
@@ -115,6 +115,7 @@ bool imgui_window_init()
 
 	ZeroMemory(&msg, sizeof(msg));
 	ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+	SetWindowPos(hwnd, HWND_TOPMOST, 100, 100, 400, 800, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 	UpdateWindow(hwnd);
 	return true;
 }
