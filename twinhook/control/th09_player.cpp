@@ -17,9 +17,44 @@ namespace
 	constexpr uintptr_t TH09_BULLET_VEL = 0x0D58;
 	constexpr uintptr_t TH09_BULLET_STATE = 0x0DBE;
 
-	vec2 readVec2(uintptr_t addr)
+	bool canRead(uintptr_t addr, size_t size)
 	{
-		return vec2(*(float*)addr, *(float*)(addr + sizeof(float)));
+		uintptr_t end = addr + size;
+		for (uintptr_t cur = addr; cur < end;)
+		{
+			MEMORY_BASIC_INFORMATION mbi{};
+			if (!VirtualQuery((void*)cur, &mbi, sizeof(mbi)) ||
+				mbi.State != MEM_COMMIT ||
+				(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+				return false;
+
+			uintptr_t regionEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+			if (regionEnd <= cur)
+				return false;
+			cur = regionEnd;
+		}
+		return true;
+	}
+
+	template <typename T>
+	bool readValue(uintptr_t addr, T& value)
+	{
+		if (!canRead(addr, sizeof(T)))
+			return false;
+		value = *(T*)addr;
+		return true;
+	}
+
+	bool readVec2(uintptr_t addr, vec2& value)
+	{
+		float x;
+		float y;
+		if (!readValue(addr, x) || !readValue(addr + sizeof(float), y))
+			return false;
+		if (!std::isfinite(x) || !std::isfinite(y))
+			return false;
+		value = vec2(x, y);
+		return true;
 	}
 
 	bool isInPlayfield(const vec2& p)
@@ -67,12 +102,14 @@ void th09_player::onEnableChanged(bool enable)
 
 player th09_player::getPlayerEntity()
 {
-	uintptr_t playerAddr = *(uintptr_t*)TH09_P1_PLAYER_PTR;
+	uintptr_t playerAddr;
+	if (!readValue(TH09_P1_PLAYER_PTR, playerAddr))
+		return player{ aabb() };
 	if (!playerAddr)
 		return player{ aabb() };
 
-	vec2 center = readVec2(playerAddr + TH09_PLAYER_POS);
-	if (!isInPlayfield(center))
+	vec2 center;
+	if (!readVec2(playerAddr + TH09_PLAYER_POS, center) || !isInPlayfield(center))
 		return player{ aabb() };
 
 	vec2 sz(5, 5);
@@ -86,28 +123,38 @@ player th09_player::getPlayerEntity()
 
 void th09_player::doBulletPoll()
 {
-	uintptr_t bulletManager = *(uintptr_t*)TH09_P1_BULLET_MANAGER_PTR;
+	uintptr_t bulletManager;
+	if (!readValue(TH09_P1_BULLET_MANAGER_PTR, bulletManager))
+		return;
 	if (!bulletManager)
 		return;
 
 	for (int i = 0; i < TH09_BULLET_COUNT; ++i)
 	{
 		uintptr_t bulletAddr = bulletManager + TH09_BULLETS_OFFSET + i * TH09_BULLET_SIZE;
-		uint16_t state = *(uint16_t*)(bulletAddr + TH09_BULLET_STATE);
+		uint16_t state;
+		if (!readValue(bulletAddr + TH09_BULLET_STATE, state))
+			continue;
 		if (state == 0 || state == 6)
 			continue;
 
-		vec2 center = readVec2(bulletAddr + TH09_BULLET_POS);
-		if (!isInPlayfield(center))
+		vec2 center;
+		if (!readVec2(bulletAddr + TH09_BULLET_POS, center) || !isInPlayfield(center))
 			continue;
 
-		vec2 sz = readVec2(bulletAddr + TH09_BULLET_HITBOX);
+		vec2 sz;
+		if (!readVec2(bulletAddr + TH09_BULLET_HITBOX, sz))
+			continue;
 		if (sz.x <= 0 || sz.y <= 0 || sz.x > 64 || sz.y > 64)
 			sz = vec2(6, 6);
 
+		vec2 velocity;
+		if (!readVec2(bulletAddr + TH09_BULLET_VEL, velocity))
+			velocity = vec2();
+
 		aabb a{
 			center - sz / 2,
-			readVec2(bulletAddr + TH09_BULLET_VEL),
+			velocity,
 			sz,
 		};
 		bullets.push_back(bullet{ a });

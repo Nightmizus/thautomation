@@ -44,9 +44,50 @@ namespace
 	constexpr uintptr_t TH06_ITEM_IN_USE = 0x141;
 	constexpr int TH06_ITEM_POINT_BULLET = 6;
 
-	vec2 readVec2(uintptr_t addr)
+	bool canRead(uintptr_t addr, size_t size)
 	{
-		return vec2(*(float*)addr, *(float*)(addr + sizeof(float)));
+		uintptr_t end = addr + size;
+		for (uintptr_t cur = addr; cur < end;)
+		{
+			MEMORY_BASIC_INFORMATION mbi{};
+			if (!VirtualQuery((void*)cur, &mbi, sizeof(mbi)) ||
+				mbi.State != MEM_COMMIT ||
+				(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+				return false;
+
+			uintptr_t regionEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+			if (regionEnd <= cur)
+				return false;
+			cur = regionEnd;
+		}
+		return true;
+	}
+
+	template <typename T>
+	bool readValue(uintptr_t addr, T& value)
+	{
+		if (!canRead(addr, sizeof(T)))
+			return false;
+		value = *(T*)addr;
+		return true;
+	}
+
+	bool readVec2(uintptr_t addr, vec2& value)
+	{
+		float x;
+		float y;
+		if (!readValue(addr, x) || !readValue(addr + sizeof(float), y))
+			return false;
+		if (!std::isfinite(x) || !std::isfinite(y))
+			return false;
+		value = vec2(x, y);
+		return true;
+	}
+
+	bool isInPlayfield(const vec2& p)
+	{
+		return p.x >= -64 && p.x <= th_param.GAME_WIDTH + 64 &&
+			p.y >= -64 && p.y <= th_param.GAME_HEIGHT + 64;
 	}
 }
 
@@ -91,9 +132,13 @@ void th06_player::onEnableChanged(bool enable)
 
 player th06_player::getPlayerEntity()
 {
+	vec2 center;
+	if (!readVec2(TH06_PLAYER_POS, center) || !isInPlayfield(center))
+		return player{ aabb() };
+
 	vec2 sz(2.5f, 2.5f);
 	aabb a{
-		readVec2(TH06_PLAYER_POS) - sz / 2,
+		center - sz / 2,
 		vec2(),
 		sz,
 	};
@@ -105,14 +150,20 @@ void th06_player::doBulletPoll()
 	for (int i = 0; i < TH06_BULLET_COUNT; ++i)
 	{
 		uintptr_t bulletAddr = TH06_BULLET_MANAGER + TH06_BULLETS_OFFSET + i * TH06_BULLET_SIZE;
-		uint16_t state = *(uint16_t*)(bulletAddr + TH06_BULLET_STATE);
+		uint16_t state;
+		if (!readValue(bulletAddr + TH06_BULLET_STATE, state))
+			continue;
 		if (state != 1)
 			continue;
 
-		vec2 center = readVec2(bulletAddr + TH06_BULLET_POS);
-		vec2 velocity = readVec2(bulletAddr + TH06_BULLET_VEL);
-		vec2 sz = readVec2(bulletAddr + TH06_BULLET_HITBOX);
-		if (sz.x <= 0 || sz.y <= 0)
+		vec2 center;
+		vec2 velocity;
+		vec2 sz;
+		if (!readVec2(bulletAddr + TH06_BULLET_POS, center) ||
+			!readVec2(bulletAddr + TH06_BULLET_VEL, velocity) ||
+			!readVec2(bulletAddr + TH06_BULLET_HITBOX, sz) ||
+			!isInPlayfield(center) ||
+			sz.x <= 0 || sz.y <= 0 || sz.x > 64 || sz.y > 64)
 			continue;
 
 		aabb a{
@@ -129,19 +180,23 @@ void th06_player::doEnemyPoll()
 	for (int i = 0; i < TH06_ENEMY_COUNT; ++i)
 	{
 		uintptr_t enemyAddr = TH06_ENEMY_MANAGER + TH06_ENEMIES_OFFSET + i * TH06_ENEMY_SIZE;
-		if (*(int32_t*)(enemyAddr + TH06_ENEMY_LIFE) <= 0)
+		int32_t life;
+		if (!readValue(enemyAddr + TH06_ENEMY_LIFE, life) || life <= 0)
 			continue;
 
-		vec2 center = readVec2(enemyAddr + TH06_ENEMY_POS);
-		vec2 sz = readVec2(enemyAddr + TH06_ENEMY_HITBOX);
-		if (center.x < -64 || center.x > th_param.GAME_WIDTH + 64 ||
-			center.y < -64 || center.y > th_param.GAME_HEIGHT + 64 ||
-			sz.x <= 0 || sz.y <= 0)
+		vec2 center;
+		vec2 sz;
+		vec2 velocity;
+		if (!readVec2(enemyAddr + TH06_ENEMY_POS, center) ||
+			!readVec2(enemyAddr + TH06_ENEMY_HITBOX, sz) ||
+			!readVec2(enemyAddr + TH06_ENEMY_VEL, velocity) ||
+			!isInPlayfield(center) ||
+			sz.x <= 0 || sz.y <= 0 || sz.x > 128 || sz.y > 128)
 			continue;
 
 		aabb a{
 			center - sz / 2,
-			readVec2(enemyAddr + TH06_ENEMY_VEL),
+			velocity,
 			sz,
 		};
 		enemies.push_back(enemy{ a });
@@ -153,16 +208,23 @@ void th06_player::doPowerupPoll()
 	for (int i = 0; i < TH06_ITEM_COUNT; ++i)
 	{
 		uintptr_t itemAddr = TH06_ITEM_MANAGER + i * TH06_ITEM_SIZE;
-		if (!*(uint8_t*)(itemAddr + TH06_ITEM_IN_USE))
+		uint8_t inUse;
+		if (!readValue(itemAddr + TH06_ITEM_IN_USE, inUse) || !inUse)
 			continue;
 
-		int8_t itemType = *(int8_t*)(itemAddr + TH06_ITEM_TYPE);
+		int8_t itemType;
+		if (!readValue(itemAddr + TH06_ITEM_TYPE, itemType))
+			continue;
 		if (itemType < 0)
+			continue;
+
+		vec2 center;
+		if (!readVec2(itemAddr + TH06_ITEM_POS, center) || !isInPlayfield(center))
 			continue;
 
 		vec2 sz(6, 6);
 		aabb a{
-			readVec2(itemAddr + TH06_ITEM_POS) - sz / 2,
+			center - sz / 2,
 			vec2(),
 			sz,
 		};
@@ -175,22 +237,35 @@ void th06_player::doLaserPoll()
 	for (int i = 0; i < TH06_LASER_COUNT; ++i)
 	{
 		uintptr_t laserAddr = TH06_BULLET_MANAGER + TH06_LASERS_OFFSET + i * TH06_LASER_SIZE;
-		if (!*(int32_t*)(laserAddr + TH06_LASER_IN_USE))
+		int32_t inUse;
+		if (!readValue(laserAddr + TH06_LASER_IN_USE, inUse) || !inUse)
 			continue;
 
-		float length = *(float*)(laserAddr + TH06_LASER_END_OFFSET);
-		float width = *(float*)(laserAddr + TH06_LASER_WIDTH);
-		if (length <= 0 || width <= 0)
+		float length;
+		float width;
+		float angle;
+		float speed;
+		vec2 center;
+		if (!readValue(laserAddr + TH06_LASER_END_OFFSET, length) ||
+			!readValue(laserAddr + TH06_LASER_WIDTH, width) ||
+			!readValue(laserAddr + TH06_LASER_ANGLE, angle) ||
+			!readValue(laserAddr + TH06_LASER_SPEED, speed) ||
+			!readVec2(laserAddr + TH06_LASER_POS, center))
+			continue;
+		if (!std::isfinite(length) || !std::isfinite(width) ||
+			!std::isfinite(angle) || !std::isfinite(speed) ||
+			length <= 0 || width <= 0 || length > 1024 || width > 256 ||
+			!isInPlayfield(center))
 			continue;
 
 		obb a{
-			readVec2(laserAddr + TH06_LASER_POS),
+			center,
 			length,
 			width / 2.f,
-			*(float*)(laserAddr + TH06_LASER_ANGLE),
+			angle,
 			vec2(
-				*(float*)(laserAddr + TH06_LASER_SPEED) * cos(*(float*)(laserAddr + TH06_LASER_ANGLE)),
-				*(float*)(laserAddr + TH06_LASER_SPEED) * sin(*(float*)(laserAddr + TH06_LASER_ANGLE)))
+				speed * cos(angle),
+				speed * sin(angle))
 		};
 		lasers.push_back(laser{ a });
 	}

@@ -123,6 +123,15 @@ void th_player::bindAlgorithm(th_algorithm* algo)
 th_kbd_state th_player::getKeyboardState() const
 {
 	uint8_t* ptr_gkbd_st = gs_ptr.kbd_state;
+	MEMORY_BASIC_INFORMATION mbi{};
+	if (!ptr_gkbd_st ||
+		!VirtualQuery(ptr_gkbd_st, &mbi, sizeof(mbi)) ||
+		mbi.State != MEM_COMMIT ||
+		(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+	{
+		return th_kbd_state{};
+	}
+
 	th_kbd_state s = {
 		(bool)(ptr_gkbd_st[0] & 1),
 		(bool)(ptr_gkbd_st[0] & 2),
