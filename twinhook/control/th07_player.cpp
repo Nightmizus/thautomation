@@ -40,8 +40,16 @@ void th07_player::onEnableChanged(bool enable)
 
 player th07_player::getPlayerEntity()
 {
-	// TODO
-	return player{ aabb() };
+	PBYTE PlayerPtrAddr = (PBYTE)this->gs_ptr.plyr_pos;
+
+	vec2 sz(5, 5);
+	aabb a{
+		vec2(*(float*)PlayerPtrAddr - th_param.GAME_X_OFFSET,
+			 *(float*)(PlayerPtrAddr + 4) - th_param.GAME_Y_OFFSET) - sz / 2,
+		vec2(),
+		sz,
+	};
+	return player{ a };
 }
 
 void th07_player::draw(IDirect3DDevice9* d3dDev)
